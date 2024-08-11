@@ -14,7 +14,7 @@ declare -a average=(
   [4]=0
 )
 
-for num in {1..5}
+for num in {1..7}
 do
 ./a.out ../images/$num.ppm result.ppm | cut -d ' ' -f 4 >> input.txt
 done

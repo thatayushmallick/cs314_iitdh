@@ -8,3 +8,5 @@
 + details can be extracted when smoothened image matrix is substracted from original matrix, keeping in mind that it should be between 0-255.
 #### Step-4 
 + final sharpened image can be aquired by adding detailed matrix to original image.
+
+to run the file just run the bash script.
