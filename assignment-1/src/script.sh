@@ -27,3 +27,9 @@ if test -f ./avg;then
   rm ./avg
 fi
 done
+if test -f result.ppm;then
+	rm result.ppm
+fi
+if test -f a.out;then
+	rm a.out
+fi
