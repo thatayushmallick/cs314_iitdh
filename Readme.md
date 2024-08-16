@@ -10,3 +10,7 @@
 + final sharpened image can be aquired by adding detailed matrix to original image.
 
 to run the file just run the bash script.
+
+## Assignment-2
+#### Part-1
++ just needed to apply a linear search for matching the pattern. applied here using sliding window concept.
