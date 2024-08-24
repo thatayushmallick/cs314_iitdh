@@ -38,29 +38,37 @@ int main(int argc, char **argv)
 	int search_end_position = atoi(argv[4]);
 
 	//TODO
-	// start reading file
-	ifstream file("file.txt");
-	// allocate space 
-	int search_space = search_end_position-search_start_position+1;
-	char* input = new char[search_space];
-	// read from file enter into allocate
-	char ch;
-	int count1 = 0;
-	while(file.get(ch)){
-		if(count1>search_end_position){
-			break;
-		}else if(count1>=search_start_position){
-			input[count1-search_start_position] = ch;
-		}
-		count1++;
-	}
+  // building ifstream
+	ifstream file(file_to_search_in, std::ios::in);
+  if(!file.is_open()){
+    cerr << "Error can't open file: " << file_to_search_in << endl;
+    return -1;
+  }
+  // setting up start and end position
+  streampos start = search_start_position;
+  streampos end = search_end_position;
+  if(start>end){
+    cerr << "Error: start should be small than end" << endl;
+    return -1;
+  }
+  // size of search space
+  streamsize length = end-start+1;
+  // moving pointer to start position
+  file.seekg(start);
+  // reading the words upto length
+  char* buffer = new char[length+1];
+  file.read(buffer,length);
+  // end of search space should be /0
+  buffer[length] = '\0';
+  // close file ptr
+  file.close();
 	// pass the input, word and their lengths to check;
 	int word_length = strlen(pattern_to_search_for);
-	int output = solve(input, pattern_to_search_for, search_space, word_length);
-	if(output!=search_space-word_length+1){
+	int output = solve(buffer, pattern_to_search_for, length, word_length);
+	if(output!=length-word_length+1){
 		cout << "[" << getpid() << "] found at " << output+search_start_position << endl;
 		return 1;
 	}
-	cout << "[" << getpid() << "]" << "didn't find\n";
+	cout << "[" << getpid() << "] didn't find\n";
 	return 0;
 }
