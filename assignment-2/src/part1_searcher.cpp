@@ -42,7 +42,6 @@ int main(int argc, char **argv)
 	ifstream file("file.txt");
 	// allocate space 
 	int search_space = search_end_position-search_start_position+1;
-	cout << search_space << "\n";
 	char* input = new char[search_space];
 	// read from file enter into allocate
 	char ch;
@@ -55,15 +54,13 @@ int main(int argc, char **argv)
 		}
 		count1++;
 	}
-	cout << input << "\n";
 	// pass the input, word and their lengths to check;
 	int word_length = strlen(pattern_to_search_for);
-	cout << word_length << "\n";
 	int output = solve(input, pattern_to_search_for, search_space, word_length);
 	if(output!=search_space-word_length+1){
-		cout << getpid() << " found at " << output+search_start_position;
+		cout << "[" << getpid() << "] found at " << output+search_start_position << endl;
 		return 1;
 	}
-	cout << "[-1] didn't find\n";
+	cout << "[" << getpid() << "]" << "didn't find\n";
 	return 0;
 }

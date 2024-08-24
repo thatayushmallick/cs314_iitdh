@@ -14,3 +14,9 @@ to run the file just run the bash script.
 ## Assignment-2
 #### Part-1
 + just needed to apply a linear search for matching the pattern. applied here using sliding window concept.
++ to execute: (1) make build-part1 (2) make run-part1
+#### Part-2
++ now we need to distribute this work parallely, so we define a maximum chunk-size that is only to be searched not more than that.
++ for this we fork our parent into two childs & each child if greater than max chunk-size forks again (implemented using execv()), and each parent waits for child to complete (implemented this using waitpid()).
++ once chunk-size is adjusted we fork again to run part1-searcher in given chunk space (implemeted using execv).
++ to execute: (1) make build-part2 (2) make run-part2
