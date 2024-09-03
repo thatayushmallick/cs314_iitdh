@@ -20,3 +20,7 @@ to run the file just run the bash script.
 + for this we fork our parent into two childs & each child if greater than max chunk-size forks again (implemented using execv()), and each parent waits for child to complete (implemented this using waitpid()).
 + once chunk-size is adjusted we fork again to run part1-searcher in given chunk space (implemeted using execv).
 + to execute: (1) make build-part2 (2) make run-part2
+#### Part-3
++ when finding parallely, if one process finds the pattern it should kill other exisiting process as running them seems a waste of resource.
++ a killpg (kill-process-group) command passes signal 15 to the current process group killing every process inside the given process group.
++ to execute: (1) make build-part3 (2) make run-part3
