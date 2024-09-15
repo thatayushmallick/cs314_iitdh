@@ -120,14 +120,16 @@ queue<Process*>WAITING_Q;
 // process intializer
 void throwNewProcess(queue<Process*>&ProcessList, bool is_fifo){
   cout << "THROWING NEW PROCESS" << endl;
-  if(ProcessList.front()->getArrivalTime()==GLOBAL_TIME){
-    cout << "PID: " << ProcessList.front()->getPid() << " INTIALISED" << endl;
-    if(is_fifo){
-      READY_Q_FIFO.push_back(ProcessList.front());
-    }else{
-      READY_Q.push(ProcessList.front());
+  if(!ProcessList.empty()){
+    if(ProcessList.front()->getArrivalTime()==GLOBAL_TIME){
+      cout << "PID: " << ProcessList.front()->getPid() << " INTIALISED" << endl;
+      if(is_fifo){
+        READY_Q_FIFO.push_back(ProcessList.front());
+      }else{
+        READY_Q.push(ProcessList.front());
+      }
+      ProcessList.pop();
     }
-    ProcessList.pop();
   }
 }
 
@@ -138,8 +140,8 @@ class CPU{
     int process_pid;
     int time_left;
     Process* running_process;
-    bool is_empty = true;
   public:
+    bool is_empty = true;
     int get_process_pid(){
       return process_pid;
     }
@@ -158,12 +160,6 @@ class CPU{
     void set_current_process(Process* n){
       running_process = n;
     }
-    bool get_is_empty(){
-      return is_empty;
-    }
-    void set_is_empty(bool stat){
-      is_empty = true;
-    }
 };
 
 // an IO class is that has the time and pid of all the process
@@ -171,34 +167,39 @@ class CPU{
 class IO{
   private:
     vector<Process*> waiting_process;
-    bool is_fifo = false;
   public:
+    bool is_fifo = false;
     bool check_is_empty(){
       return (waiting_process.empty() == true);
     }
     void do_io(){
+      cout << "lere";
       if(!waiting_process.empty()){
         cout << "DOING IO" << endl;
         int index = 0;
         for(auto i=waiting_process.begin(); i!=waiting_process.end(); i++){
-          if(waiting_process[index]->getIOBursts().front()==0){
-            waiting_process[index]->popIOBurst();
-            if(is_fifo){
-              cout << "PROCESS " << waiting_process[index]->getPid() << " ENTERING READY_Q_FIFO" << endl;
-              READY_Q_FIFO.push_front(waiting_process[index]);
+          if(!check_is_empty()){
+            if(waiting_process[index]->getIOBursts().front()==0){
+              waiting_process[index]->popIOBurst();
+              if(is_fifo){
+                cout << "PROCESS " << waiting_process[index]->getPid() << " ENTERING READY_Q_FIFO" << endl;
+                READY_Q_FIFO.push_front(waiting_process[index]);
+              }else{
+                cout << "PROCESS " << waiting_process[index]->getPid() << " ENTERING READY_Q" << endl;
+                READY_Q.push(waiting_process[index]);
+              }
+              waiting_process.erase(i);
+            }else if(waiting_process[index]->getIOBursts().front() > 0){
+              cout << "PROCESS " << waiting_process[index]->getPid() << " WAITING IN IO FOR " << waiting_process[index]->getIOBursts().front() << endl;
+              waiting_process[index]->reduceIOBurst();
             }else{
-              cout << "PROCESS " << waiting_process[index]->getPid() << " ENTERING READY_Q" << endl;
-              READY_Q.push(waiting_process[index]);
+              cout << "PROCESS " << waiting_process[index]->getPid() << " HAS EXITED!!" << endl;
+              waiting_process.erase(i);
             }
-            waiting_process.erase(i);
-          }else if(waiting_process[index]->getIOBursts().front() > 0){
-            cout << "PROCESS " << waiting_process[index]->getPid() << " WAITING IN IO FOR " << waiting_process[index]->getIOBursts().front() << endl;
-            waiting_process[index]->reduceIOBurst();
+            index++;
           }else{
-            cout << "PROCESS " << waiting_process[index]->getPid() << " HAS EXITED!!" << endl;
-            waiting_process.erase(i);
+            break;
           }
-          index++;
         }
       }else{
         cout << "NO IO NEED" << endl;
@@ -215,40 +216,70 @@ class IO{
 void startFIFO(queue<Process*>&processList){
   CPU* my_cpu = new CPU;
   IO* my_IO = new IO;
+  my_IO->is_fifo = true;
   while(true){
     if(GLOBAL_TIME<=MAX_WAIT){
       throwNewProcess(processList,true);
     }
-    if(READY_Q_FIFO.empty() && my_IO->check_is_empty() && GLOBAL_TIME>MAX_WAIT){
+    if(READY_Q_FIFO.empty() && my_IO->check_is_empty() && GLOBAL_TIME>MAX_WAIT && my_cpu->is_empty){
       cout << "BREAKING OUT" << endl;
       break;
     }
     if(!READY_Q_FIFO.empty()){
       if(my_IO->check_is_empty()){
-        if(my_cpu->get_is_empty()){
+        if(my_cpu->is_empty){
           my_cpu->set_current_process(READY_Q_FIFO.front());
           my_cpu->set_process_pid(READY_Q_FIFO.front()->getPid());
           my_cpu->set_time_left(READY_Q_FIFO.front()->getCpuBursts().front());
-          my_cpu->set_is_empty(false);
+          my_cpu->is_empty = false;
           cout << my_cpu->get_process_pid() << " GOING 2 CPU" << endl;
           READY_Q_FIFO.pop_front();
         }else{
+          cout << "CPU ENGAGED!";
           if(my_cpu->get_time_left() == 0){
             my_cpu->get_current_process()->popCpuBurst();
-            my_cpu->set_is_empty(true);
-            if(my_cpu->get_current_process()->getCpuBursts().front()!=-1){
+            my_cpu->is_empty = true;
+            if(my_cpu->get_current_process()->getIOBursts().front()!=-1){
               cout << my_cpu->get_process_pid() << " GOING 2 WAITING_Q" << endl;
               my_IO->set_waiting_process(my_cpu->get_current_process());
             }else{
               cout << my_cpu->get_process_pid() << " EXITING.." << endl;
             }
+          }else{
+            cout << my_cpu->get_process_pid() << " IS IN CPU FOR" << my_cpu->get_time_left();
+            my_cpu->set_time_left(my_cpu->get_time_left()-1);
+            jiffy();
           }
         }
       }else{
         my_IO->do_io();
+        jiffy();
       }
+    }else if(!my_cpu->is_empty){
+      if(my_IO->check_is_empty()){
+        cout << "CPU ENGAGED!";
+        if(my_cpu->get_time_left() == 0){
+          my_cpu->get_current_process()->popCpuBurst();
+          my_cpu->is_empty = true;
+          if(my_cpu->get_current_process()->getIOBursts().front()!=-1){
+            cout << my_cpu->get_process_pid() << " GOING 2 WAITING_Q" << endl;
+            my_IO->set_waiting_process(my_cpu->get_current_process());
+          }else{
+            cout << my_cpu->get_process_pid() << " EXITING.." << endl;
+          }
+        }else{
+          cout << my_cpu->get_process_pid() << " IS IN CPU FOR" << my_cpu->get_time_left();
+          my_cpu->set_time_left(my_cpu->get_time_left()-1);
+          jiffy();
+        }
+      }else{
+        my_IO->do_io();
+        jiffy();
+      }
+    }else if(!my_IO->check_is_empty()){
+      my_IO->do_io();
+      jiffy();
     }
-    jiffy();
   }
   cout << "ENDED" << endl;
 }
