@@ -67,7 +67,7 @@ int main(int argc, char **argv)
 	int output = solve(buffer, pattern_to_search_for, length, word_length);
 	if(output!=length-word_length+1){
 		cout << "[" << getpid() << "] found at " << output+search_start_position << endl;
-		return 1;
+		return 0;
 	}
 	cout << "[" << getpid() << "] didn't find\n";
 	return 0;
