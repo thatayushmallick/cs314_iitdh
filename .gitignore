@@ -7,3 +7,4 @@ avg.txt
 file.txt
 *.out
 ignore_signal.sh
+*.exe

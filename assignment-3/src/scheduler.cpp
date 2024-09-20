@@ -174,10 +174,9 @@ void antiJiffy()
 
 // global ready queue && global waiting queue
 queue<Process *> READY_Q;
-deque<Process *> READY_Q_FIFO;
 queue<Process *> WAITING_Q;
 priority_queue<pair<int, Process *>, vector<pair<int, Process *>>, greater<pair<int, Process *>>> SJF_READY_Q;
-// process intializer for FIFO AND ROUND-ROBIN
+// process intializer
 void throwNewProcess(queue<Process *> &ProcessList, bool is_fifo)
 {
   cout << "TRY THROWING NEW PROCESS" << endl;
@@ -186,14 +185,7 @@ void throwNewProcess(queue<Process *> &ProcessList, bool is_fifo)
     if (ProcessList.front()->getArrivalTime() == GLOBAL_TIME)
     {
       cout << "PID: " << ProcessList.front()->getPid() << " INTIALISED" << endl;
-      if (is_fifo)
-      {
-        READY_Q_FIFO.push_back(ProcessList.front());
-      }
-      else
-      {
-        READY_Q.push(ProcessList.front());
-      }
+      READY_Q.push(ProcessList.front());
       ProcessList.pop();
       throwNewProcess(ProcessList, is_fifo);
     }
@@ -249,7 +241,6 @@ private:
 
 public:
   bool is_fifo = false;
-  bool is_preamptive = true;
   bool check_is_empty()
   {
     return (waiting_process.empty() == true);
@@ -267,16 +258,8 @@ public:
           if (waiting_process[index]->getIOBursts().front() == 0)
           {                                       // check if while reducing IO burst have been trimmed to 0.
             waiting_process[index]->popIOBurst(); // if so then this burst must be popped
-            if (is_fifo)
-            {
-              cout << "PROCESS " << waiting_process[index]->getPid() << " ENTERING READY_Q_FIFO" << endl;
-              READY_Q_FIFO.push_front(waiting_process[index]); // if it's fifo then after popping the burst process should be pushed in front of READY_Q.
-            }
-            else
-            {
-              cout << "PROCESS " << waiting_process[index]->getPid() << " ENTERING READY_Q" << endl;
-              READY_Q.push(waiting_process[index]); // if not FIFO then after popping push this process in back of queue
-            }
+            cout << "PROCESS " << waiting_process[index]->getPid() << " ENTERING READY_Q" << endl;
+            READY_Q.push(waiting_process[index]); // if not FIFO then after popping push this process in back of queue
             waiting_process.erase(i); // remove the process from waiting_q
             antiJiffy();              // as it doesn't take time to go from waiting 2 ready_q
           }
@@ -332,16 +315,8 @@ public:
           if (waiting_process[index]->getIOBursts().front() == 0)
           {                                       // check if while reducing IO burst have been trimmed to 0.
             waiting_process[index]->popIOBurst(); // if so then this burst must be popped
-            if (is_preamptive)
-            {
-              cout << "PROCESS " << waiting_process[index]->getPid() << " ENTERING SJF_READY_Q" << endl;
-              SJF_READY_Q.push({waiting_process[index]->currentCPUburst(), waiting_process[index]}); // if it's fifo then after popping the burst process should be pushed in front of READY_Q.
-            }
-            else
-            {
-              cout << "PROCESS " << waiting_process[index]->getPid() << " ENTERING READY_Q" << endl;
-              READY_Q.push(waiting_process[index]); // if not FIFO then after popping push this process in back of queue
-            }
+            cout << "PROCESS " << waiting_process[index]->getPid() << " ENTERING SJF_READY_Q" << endl;
+            SJF_READY_Q.push({waiting_process[index]->currentCPUburst(), waiting_process[index]}); // if it's fifo then after popping the burst process should be pushed in front of READY_Q.
             waiting_process.erase(i); // remove the process from waiting_q
             antiJiffy();              // as it doesn't take time to go from waiting 2 ready_q
           }
@@ -379,31 +354,49 @@ public:
   }
 };
 
+
+/*performs FIFO per cpu
+burst*/
 void startFIFO(queue<Process *> &processList)
 {
   CPU *my_cpu = new CPU;
   IO *my_IO = new IO;
-  my_IO->is_fifo = true;
   while (true)
   {
+    /*if global time is less than 
+    max wait try throwing a new proccess
+    to ready_q*/
     if (GLOBAL_TIME <= MAX_WAIT)
     {
       throwNewProcess(processList, true);
     }
-    if (READY_Q_FIFO.empty() && my_IO->check_is_empty() && GLOBAL_TIME > MAX_WAIT && my_cpu->is_empty)
+    /*cases to break out:
+    1.ready_q is empty,
+    2. no process in IO
+    3. time is greater than last 
+    recievable process 
+    4. cpu is empty*/
+    if (READY_Q.empty() && my_IO->check_is_empty() && GLOBAL_TIME > MAX_WAIT && my_cpu->is_empty)
     {
       cout << "BREAKING OUT" << endl;
       break;
     }
-    if (my_cpu->is_empty && !READY_Q_FIFO.empty())
+    /*if cpu is empty and we 
+    have some process in ready_q
+    we throw it into ready_q*/
+    if (my_cpu->is_empty && !READY_Q.empty())
     {
-      my_cpu->set_current_process(READY_Q_FIFO.front());
-      my_cpu->set_process_pid(READY_Q_FIFO.front()->getPid());
-      my_cpu->set_time_left(READY_Q_FIFO.front()->getCpuBursts().front());
+      my_cpu->set_current_process(READY_Q.front());
+      my_cpu->set_process_pid(READY_Q.front()->getPid());
+      my_cpu->set_time_left(READY_Q.front()->getCpuBursts().front());
       my_cpu->is_empty = false;
       cout << my_cpu->get_process_pid() << " GOING 2 CPU" << endl;
-      READY_Q_FIFO.pop_front();
+      READY_Q.pop();
     }
+    /*if cpu is not empty
+    we reduce burst or if 
+    burst is finished we throw this 
+    process to do io.*/
     if (!my_cpu->is_empty)
     {
       cout << "CPU ENGAGED!";
@@ -430,92 +423,6 @@ void startFIFO(queue<Process *> &processList)
     }
     my_IO->do_io();
     jiffy();
-    //   // something is in READY_Q
-    //   if (!READY_Q_FIFO.empty())
-    //   {
-    //     if (my_IO->check_is_empty())
-    //     {
-    //       if (my_cpu->is_empty)
-    //       {
-    //         my_cpu->set_current_process(READY_Q_FIFO.front());
-    //         my_cpu->set_process_pid(READY_Q_FIFO.front()->getPid());
-    //         my_cpu->set_time_left(READY_Q_FIFO.front()->getCpuBursts().front());
-    //         my_cpu->is_empty = false;
-    //         cout << my_cpu->get_process_pid() << " GOING 2 CPU" << endl;
-    //         READY_Q_FIFO.pop_front();
-    //         antiJiffy(); // antijiffy as it doesn't take time to go from ready_q 2 CPU
-    //       }
-    //       else
-    //       {
-    //         cout << "CPU ENGAGED!";
-    //         if (my_cpu->get_time_left() == 0)
-    //         {
-    //           my_cpu->get_current_process()->popCpuBurst();
-    //           my_cpu->is_empty = true;
-    //           if (my_cpu->get_current_process()->getIOBursts().front() != -1)
-    //           {
-    //             cout << my_cpu->get_process_pid() << " GOING 2 WAITING_Q" << endl;
-    //             my_IO->set_waiting_process(my_cpu->get_current_process());
-    //             antiJiffy(); // as it doesn't take time to go from cpu 2 waiting_q
-    //           }
-    //           else
-    //           {
-    //             cout << my_cpu->get_process_pid() << " EXITING.." << endl;
-    //             antiJiffy(); // as it doesn't take time to go from cpu 2 exiting
-    //           }
-    //         }
-    //         else
-    //         {
-    //           cout << my_cpu->get_process_pid() << " IS IN CPU FOR" << my_cpu->get_time_left();
-    //           my_cpu->set_time_left(my_cpu->get_time_left() - 1);
-    //           // jiffy();
-    //         }
-    //       }
-    //     }
-    //     else
-    //     {
-    //       my_IO->do_io();
-    //       // jiffy();
-    //     }
-    //     // READY_Q is free but there is something in CPU
-    //   }
-    //   else if (!my_cpu->is_empty)
-    //   {
-    //     if (my_IO->check_is_empty())
-    //     {
-    //       cout << "CPU ENGAGED!";
-    //       if (my_cpu->get_time_left() == 0)
-    //       {
-    //         my_cpu->get_current_process()->popCpuBurst();
-    //         my_cpu->is_empty = true;
-    //         if (my_cpu->get_current_process()->getIOBursts().front() != -1)
-    //         {
-    //           cout << my_cpu->get_process_pid() << " GOING 2 WAITING_Q" << endl;
-    //           my_IO->set_waiting_process(my_cpu->get_current_process());
-    //           antiJiffy(); // as it doesn't take time to go from cpu 2 waiting_q
-    //         }
-    //         else
-    //         {
-    //           cout << my_cpu->get_process_pid() << " EXITING.." << endl;
-    //           antiJiffy(); // as it doesn't take time to go from cpu 2 exiting
-    //         }
-    //       }
-    //       else
-    //       {
-    //         cout << my_cpu->get_process_pid() << " IS IN CPU FOR" << my_cpu->get_time_left();
-    //         my_cpu->set_time_left(my_cpu->get_time_left() - 1);
-    //       }
-    //     }
-    //     else
-    //     {
-    //       my_IO->do_io();
-    //     }
-    //     // both READY_Q and CPU are empty but there is something to be processed in IO
-    //   }
-    //   else if (!my_IO->check_is_empty())
-    //   {
-    //     my_IO->do_io();
-    //   }
   }
   cout << "ENDED" << endl;
 }
@@ -549,103 +456,9 @@ void doSJF(queue<Process *> &process_lists)
   CPU *my_cpu = new CPU;
   IO *my_io = new IO;
   my_cpu->is_empty = true;
-  my_io->is_preamptive = false;
   while (true)
   {
-    if (GLOBAL_TIME <= MAX_WAIT)
-    {
-      throwNewProcessSJF(process_lists);
-    }
-    if (GLOBAL_TIME > MAX_WAIT && SJF_READY_Q.empty() && READY_Q.empty() && my_cpu->is_empty && my_io->check_is_empty())
-    {
-      cout << "BREAKING" << endl;
-      break;
-    }
-    /*
-    if something is in sjf_ready_q then check
-    for cpu is empty and ready_q has not current
-    process in ready_q
-    */
-    if (!SJF_READY_Q.empty() || !READY_Q.empty())
-    {
-      /*
-      check if io is empty, if not
-      perform io or perform cpu
-      */
-      if (my_io->check_is_empty())
-      {
-        if (my_cpu->is_empty)
-        {
-          /*
-          check if the current process has
-          exited from ready_q i.e has been
-          finished completely as this is SJF
-          if not then pop and use from ready_q
-          else initialise a process for the first time
-          */
-          if (READY_Q.empty())
-          {
-            my_cpu->set_current_process(SJF_READY_Q.top().second);
-            my_cpu->set_process_pid(SJF_READY_Q.top().second->getPid());
-            my_cpu->set_time_left(SJF_READY_Q.top().second->currentCPUburst());
-            my_cpu->is_empty = false;
-            SJF_READY_Q.pop();
-            cout << my_cpu->get_process_pid() << " ENTERED CPU" << endl;
-          }
-          else
-          {
-            my_cpu->set_current_process(READY_Q.front());
-            my_cpu->set_process_pid(READY_Q.front()->getPid());
-            my_cpu->set_time_left(READY_Q.front()->currentCPUburst());
-            my_cpu->is_empty = false;
-            READY_Q.pop();
-            cout << my_cpu->get_process_pid() << " ENTERED CPU AGAIN" << endl;
-          }
-          antiJiffy(); /*as it doesn't take time to go from queue to cpu*/
-        }
-        else
-        {
-          if (my_cpu->get_time_left() == 0)
-          {
-            my_io->set_waiting_process(my_cpu->get_current_process());
-            my_cpu->get_current_process()->popCpuBurst();
-            my_cpu->is_empty = true;
-            cout << my_cpu->get_process_pid() << " ENTERED IO" << endl;
-            antiJiffy(); /*as it doesn't take time to go from queue to cpu*/
-          }
-          else
-          {
-            cout << my_cpu->get_process_pid() << " IN CPU FOR " << my_cpu->get_time_left() << endl;
-            my_cpu->set_time_left(my_cpu->get_time_left() - 1);
-          }
-        }
-      }
-      else
-      {
-        my_io->do_sjf_io();
-      }
-    }
-    else if (!my_cpu->is_empty)
-    {
-      if (my_cpu->get_time_left() == 0)
-      {
-        my_io->set_waiting_process(my_cpu->get_current_process());
-        my_cpu->get_current_process()->popCpuBurst();
-        my_cpu->is_empty = true;
-        cout << my_cpu->get_process_pid() << " ENTERED IO" << endl;
-        antiJiffy(); /*as it doesn't take time to go from queue to cpu*/
-      }
-      else
-      {
-        cout << my_cpu->get_process_pid() << " IN CPU FOR " << my_cpu->get_time_left() << endl;
-        my_cpu->set_time_left(my_cpu->get_time_left() - 1);
-      }
-    }
-    else if (!my_io->check_is_empty())
-    {
-      my_io->do_sjf_io();
-    }
-    jiffy();
+
   }
   cout << "SJF DONE" << endl;
 }
