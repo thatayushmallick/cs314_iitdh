@@ -719,6 +719,7 @@ void doRR(queue<Process*>&process_lists, int time_quant){
     completion_time_sum+=completion_times[i];
     max_completion_time = max(max_completion_time,completion_times[i]);
   }
+  cout << "TIME QUANT: " << time_quant << endl;
   cout << "AVERAGE WAIT TIME: " << float(wait_time_sum)/wait_times.size() << endl;
   cout << "MAXIMUM WAIT TIME: " << MAX_WAIT_TIME << endl;
   cout << "AVERAGE COMPLETION TIME: " << float(completion_time_sum)/wait_times.size() << endl;
