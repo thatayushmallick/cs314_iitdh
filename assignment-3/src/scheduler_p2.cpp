@@ -1012,10 +1012,15 @@ int main(int argc, char *argv[])
   MAX_WAIT = process_list.back()->getArrivalTime();
   cout << "MAX WAIT: " << MAX_WAIT << endl;
   inputFile.close();
-  // doFIFO(process_list);
-  // doSJF(process_list);
-  // doSRTF(process_list);
-  int time_quant = 5;
+#ifdef FIFO
+  doFIFO(process_list);
+#elif SJF
+  doSJF(process_list);
+#elif SRTF
+  doSRTF(process_list);
+#elif RR
+  int time_quant = stoi(argv[2]);
   doRR(process_list,time_quant);
+#endif
   return 0;
 }

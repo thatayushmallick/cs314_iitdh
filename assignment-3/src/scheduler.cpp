@@ -537,7 +537,6 @@ void doSRTF(queue<Process*>&process_lists){
    globaltime > maxwait, cpu is free, io is 
    free, and ready_q is also empty.*/
    if(GLOBAL_TIME>MAX_WAIT && my_cpu->is_empty && WAITING_Q.empty() && SJF_READY_Q.empty()){
-    cout << "BREAKING" << endl;
     break;
    }
    my_io->do_io(my_cpu->is_empty);
@@ -619,6 +618,7 @@ void doSRTF(queue<Process*>&process_lists){
     completion_time_sum+=completion_times[i];
     max_completion_time = max(max_completion_time,completion_times[i]);
   }
+  cout << "MAKESPAN: " << GLOBAL_TIME << endl;
   cout << "AVERAGE WAIT TIME: " << float(wait_time_sum)/wait_times.size() << endl;
   cout << "MAXIMUM WAIT TIME: " << MAX_WAIT_TIME << endl;
   cout << "AVERAGE COMPLETION TIME: " << float(completion_time_sum)/wait_times.size() << endl;
@@ -754,10 +754,15 @@ int main(int argc, char *argv[])
   MAX_WAIT = process_list.back()->getArrivalTime();
   cout << "MAX WAIT: " << MAX_WAIT << endl;
   inputFile.close();
-  // startFIFO(process_list);
-  // doSJF(process_list);
-  // doSRTF(process_list);
-  int time_quant = 5;
+#ifdef FIFO
+  startFIFO(process_list);
+#elif SJF
+  doSJF(process_list);
+#elif SRTF
+  doSRTF(process_list);
+#elif RR
+  int time_quant = stoi(argv[2]);
   doRR(process_list,time_quant);
+#endif
   return 0;
 }
