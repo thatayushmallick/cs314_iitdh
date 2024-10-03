@@ -5,3 +5,6 @@ input.txt
 avg.txt
 *.zip
 file.txt
+*.out
+ignore_signal.sh
+*.exe
