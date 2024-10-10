@@ -108,7 +108,7 @@ struct image_t* S2_find_details(struct image_t *input_image, struct image_t *smo
 
 struct image_t* S3_sharpen(struct image_t *input_image, struct image_t *details_image)
 {
-	// again collecting info from args
+	// again collecting info from args	
 	uint8_t*** original_image_matrix = input_image->image_pixels;
 	uint8_t*** detail_image_matrix = details_image->image_pixels;
 	int height = input_image->height;
