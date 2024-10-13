@@ -4,6 +4,7 @@
 #include <chrono>
 #include <stdio.h>
 #include <stdlib.h>
+#include <cstring>
 #include <string.h>
 #include <sys/shm.h>
 #include <sys/ipc.h>
@@ -46,8 +47,15 @@ struct image_t* return_padded_image(struct image_t *input_image){ // returns pad
 	return padded_image;
 }
 
-void shared_memory(struct image_t* input_image,struct image_t* padded_image, struct image_t* &output_image, char* op,int i, int iter, const std::chrono::_V2::steady_clock::time_point start_clk){
-	// const char *name = "/my_shared_memory";
+#include <fcntl.h>      // For O_CREAT, O_RDWR
+#include <sys/mman.h>   // For mmap, shm_open
+#include <sys/stat.h>   // For ftruncate
+#include <unistd.h>     // For ftruncate, close
+#include <chrono>       // For chrono functions
+#include <iostream>
+
+void shared_memory(struct image_t* input_image, struct image_t* padded_image, struct image_t* &output_image, char* op, int i, int iter, const std::chrono::_V2::steady_clock::time_point start_clk) {
+    // const char *name = "/my_shared_memory";
     // int shm_fd = shm_open(name, O_CREAT | O_RDWR, 0666);
     // if (shm_fd == -1){
     //     perror("shm_open");
@@ -63,21 +71,33 @@ void shared_memory(struct image_t* input_image,struct image_t* padded_image, str
     //     perror("mmap");
     //     exit(EXIT_FAILURE);
     // }
-	/** this is process p1 where image gets smoothened out */
+
     uint8_t smoothpixel[3];
     pid_t cdetailpid;
     int height = input_image->height;
     int width = input_image->width;
-    
-    // Shared memory setup
-    int smooth_shm_id = shmget(IPC_PRIVATE, sizeof(uint8_t) * 3 * height * width, IPC_CREAT | 0666);
-    uint8_t (*smooth_shm)[3] = (uint8_t (*)[3])shmat(smooth_shm_id, nullptr, 0);
 
-    if (smooth_shm == (void*)-1) {
-        perror("shmat");
+    // Create shared memory for smoothened pixels
+    const char *smooth_name = "/smooth_shared_memory";
+    int smooth_fd = shm_open(smooth_name, O_CREAT | O_RDWR, 0666);
+    if (smooth_fd == -1) {
+        perror("shm_open");
         exit(EXIT_FAILURE);
     }
-    
+
+    size_t smooth_size = sizeof(uint8_t) * 3 * height * width;
+    if (ftruncate(smooth_fd, smooth_size) == -1) {
+        perror("ftruncate");
+        exit(EXIT_FAILURE);
+    }
+
+    void *smooth_ptr = mmap(NULL, smooth_size, PROT_READ | PROT_WRITE, MAP_SHARED, smooth_fd, 0);
+    if (smooth_ptr == MAP_FAILED) {
+        perror("mmap");
+        exit(EXIT_FAILURE);
+    }
+    uint8_t (*smooth_shm)[3] = (uint8_t (*)[3])smooth_ptr;
+
     /** Forking to create p2 from p1 */
     cdetailpid = fork();
     if (cdetailpid == -1) {
@@ -88,32 +108,55 @@ void shared_memory(struct image_t* input_image,struct image_t* padded_image, str
     if (cdetailpid > 0) {
         /** Parent process - Smoothening (Process p1) */
         while (i != iter - 1) {
-            for (int i = 1; i <= height; i++) {
-                for (int j = 1; j <= width; j++) {
+            for (int row = 1; row <= height; row++) {
+                for (int col = 1; col <= width; col++) {
                     int smooth_image[3];
                     for (int k = 0; k < 3; k++) {
-                        smooth_image[k] = (padded_image->image_pixels[i - 1][j - 1][k] / 9 + padded_image->image_pixels[i - 1][j][k] / 9 + padded_image->image_pixels[i - 1][j + 1][k] / 9
-                                           + padded_image->image_pixels[i][j - 1][k] / 9 + padded_image->image_pixels[i][j][k] / 9 + padded_image->image_pixels[i][j + 1][k] / 9
-                                           + padded_image->image_pixels[i + 1][j - 1][k] / 9 + padded_image->image_pixels[i + 1][j][k] / 9 + padded_image->image_pixels[i + 1][j + 1][k] / 9);
+                        smooth_image[k] = (padded_image->image_pixels[row - 1][col - 1][k] / 9 +
+                                           padded_image->image_pixels[row - 1][col][k] / 9 +
+                                           padded_image->image_pixels[row - 1][col + 1][k] / 9 +
+                                           padded_image->image_pixels[row][col - 1][k] / 9 +
+                                           padded_image->image_pixels[row][col][k] / 9 +
+                                           padded_image->image_pixels[row][col + 1][k] / 9 +
+                                           padded_image->image_pixels[row + 1][col - 1][k] / 9 +
+                                           padded_image->image_pixels[row + 1][col][k] / 9 +
+                                           padded_image->image_pixels[row + 1][col + 1][k] / 9);
                         if (smooth_image[k] > 255) {
                             smooth_image[k] = 255;
                         }
-                        smooth_shm[(i - 1) * width + (j - 1)][k] = (uint8_t)smooth_image[k];
+                        smooth_shm[(row - 1) * width + (col - 1)][k] = (uint8_t)smooth_image[k];
                     }
                 }
             }
             i++;
         }
 
-        wait(NULL); /** Wait for p2 to finish */
-        // Detach and remove shared memory
-        shmdt(smooth_shm);
-        shmctl(smooth_shm_id, IPC_RMID, NULL);
+        wait(NULL);  // Wait for p2 to finish
+        // Clean up shared memory
+        munmap(smooth_ptr, smooth_size);
+        shm_unlink(smooth_name);
     } else if (cdetailpid == 0) {
         /** Child process - Detailing (Process p2) */
-        int detail_shm_id = shmget(IPC_PRIVATE, sizeof(uint8_t) * 3 * height * width, IPC_CREAT | 0666);
-        uint8_t (*detail_shm)[3] = (uint8_t (*)[3])shmat(detail_shm_id, nullptr, 0);
-        
+        const char *detail_name = "/detail_shared_memory";
+        int detail_fd = shm_open(detail_name, O_CREAT | O_RDWR, 0666);
+        if (detail_fd == -1) {
+            perror("shm_open");
+            exit(EXIT_FAILURE);
+        }
+
+        size_t detail_size = sizeof(uint8_t) * 3 * height * width;
+        if (ftruncate(detail_fd, detail_size) == -1) {
+            perror("ftruncate");
+            exit(EXIT_FAILURE);
+        }
+
+        void *detail_ptr = mmap(NULL, detail_size, PROT_READ | PROT_WRITE, MAP_SHARED, detail_fd, 0);
+        if (detail_ptr == MAP_FAILED) {
+            perror("mmap");
+            exit(EXIT_FAILURE);
+        }
+        uint8_t (*detail_shm)[3] = (uint8_t (*)[3])detail_ptr;
+
         int rowdetail = 0;
         int coldetail = 0;
         while (i != iter - 1) {
@@ -166,14 +209,14 @@ void shared_memory(struct image_t* input_image,struct image_t* padded_image, str
                 write_ppm_file(op, output_image);
             }
 
-            shmdt(detail_shm);
-            shmctl(detail_shm_id, IPC_RMID, NULL);
+            munmap(detail_ptr, detail_size);
+            shm_unlink(detail_name);
             exit(EXIT_SUCCESS);
         }
 
-        wait(NULL); /** Wait for p3 to finish */
-        shmdt(detail_shm);
-        shmctl(detail_shm_id, IPC_RMID, NULL);
+        wait(NULL); // Wait for p3 to finish
+        munmap(detail_ptr, detail_size);
+        shm_unlink(detail_name);
         exit(EXIT_SUCCESS);
     }
     return;
