@@ -47,13 +47,6 @@ struct image_t* return_padded_image(struct image_t *input_image){ // returns pad
 	return padded_image;
 }
 
-#include <fcntl.h>      // For O_CREAT, O_RDWR
-#include <sys/mman.h>   // For mmap, shm_open
-#include <sys/stat.h>   // For ftruncate
-#include <unistd.h>     // For ftruncate, close
-#include <chrono>       // For chrono functions
-#include <iostream>
-
 void shared_memory(struct image_t* input_image, struct image_t* padded_image, struct image_t* &output_image, char* op, int i, int iter, const std::chrono::_V2::steady_clock::time_point start_clk) {
     // const char *name = "/my_shared_memory";
     // int shm_fd = shm_open(name, O_CREAT | O_RDWR, 0666);
