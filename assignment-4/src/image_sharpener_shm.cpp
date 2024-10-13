@@ -48,25 +48,7 @@ struct image_t* return_padded_image(struct image_t *input_image){ // returns pad
 }
 
 void shared_memory(struct image_t* input_image, struct image_t* padded_image, struct image_t* &output_image, char* op, int i, int iter, const std::chrono::_V2::steady_clock::time_point start_clk) {
-    // const char *name = "/my_shared_memory";
-    // int shm_fd = shm_open(name, O_CREAT | O_RDWR, 0666);
-    // if (shm_fd == -1){
-    //     perror("shm_open");
-    //     exit(EXIT_FAILURE);
-    // }
-    // size_t size = 1024;
-    // if (ftruncate(shm_fd, size) == -1){
-    //     perror("ftruncate");
-    //     exit(EXIT_FAILURE);
-    // }
-	// void *ptr = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
-    // if (ptr == MAP_FAILED){
-    //     perror("mmap");
-    //     exit(EXIT_FAILURE);
-    // }
-
     uint8_t smoothpixel[3];
-    pid_t cdetailpid;
     int height = input_image->height;
     int width = input_image->width;
 
@@ -92,7 +74,7 @@ void shared_memory(struct image_t* input_image, struct image_t* padded_image, st
     uint8_t (*smooth_shm)[3] = (uint8_t (*)[3])smooth_ptr;
 
     /** Forking to create p2 from p1 */
-    cdetailpid = fork();
+    pid_t cdetailpid = fork();
     if (cdetailpid == -1) {
         perror("fork");
         exit(EXIT_FAILURE);
@@ -101,23 +83,23 @@ void shared_memory(struct image_t* input_image, struct image_t* padded_image, st
     if (cdetailpid > 0) {
         /** Parent process - Smoothening (Process p1) */
         while (i != iter - 1) {
-            for (int row = 1; row <= height; row++) {
-                for (int col = 1; col <= width; col++) {
+            for (int row = 0; row < height; row++) {
+                for (int col = 0; col < width; col++) {
                     int smooth_image[3];
                     for (int k = 0; k < 3; k++) {
-                        smooth_image[k] = (padded_image->image_pixels[row - 1][col - 1][k] / 9 +
-                                           padded_image->image_pixels[row - 1][col][k] / 9 +
-                                           padded_image->image_pixels[row - 1][col + 1][k] / 9 +
-                                           padded_image->image_pixels[row][col - 1][k] / 9 +
-                                           padded_image->image_pixels[row][col][k] / 9 +
+                        smooth_image[k] = (padded_image->image_pixels[row][col][k] / 9 +
                                            padded_image->image_pixels[row][col + 1][k] / 9 +
-                                           padded_image->image_pixels[row + 1][col - 1][k] / 9 +
+                                           padded_image->image_pixels[row][col + 2][k] / 9 +
                                            padded_image->image_pixels[row + 1][col][k] / 9 +
-                                           padded_image->image_pixels[row + 1][col + 1][k] / 9);
+                                           padded_image->image_pixels[row + 1][col + 1][k] / 9 +
+                                           padded_image->image_pixels[row + 1][col + 2][k] / 9 +
+                                           padded_image->image_pixels[row + 2][col][k] / 9 +
+                                           padded_image->image_pixels[row + 2][col + 1][k] / 9 +
+                                           padded_image->image_pixels[row + 2][col + 2][k] / 9);
                         if (smooth_image[k] > 255) {
                             smooth_image[k] = 255;
                         }
-                        smooth_shm[(row - 1) * width + (col - 1)][k] = (uint8_t)smooth_image[k];
+                        smooth_shm[row * width + col][k] = (uint8_t)smooth_image[k];
                     }
                 }
             }
@@ -125,9 +107,20 @@ void shared_memory(struct image_t* input_image, struct image_t* padded_image, st
         }
 
         wait(NULL);  // Wait for p2 to finish
-        // Clean up shared memory
-        munmap(smooth_ptr, smooth_size);
-        shm_unlink(smooth_name);
+
+        // Unmap the shared memory after p2 has finished
+        if (munmap(smooth_ptr, smooth_size) == -1) {
+            perror("munmap");
+            exit(EXIT_FAILURE);
+        }
+        if (close(smooth_fd) == -1) {
+            perror("close");
+            exit(EXIT_FAILURE);
+        }
+        if (shm_unlink(smooth_name) == -1) {
+            perror("shm_unlink");
+            exit(EXIT_FAILURE);
+        }
     } else if (cdetailpid == 0) {
         /** Child process - Detailing (Process p2) */
         const char *detail_name = "/detail_shared_memory";
@@ -150,32 +143,50 @@ void shared_memory(struct image_t* input_image, struct image_t* padded_image, st
         }
         uint8_t (*detail_shm)[3] = (uint8_t (*)[3])detail_ptr;
 
-        int rowdetail = 0;
-        int coldetail = 0;
-        while (i != iter - 1) {
-            for (int row = 0; row < height; row++) {
-                for (int col = 0; col < width; col++) {
-                    int detail_pixel[3];
-                    for (int k = 0; k < 3; k++) {
-                        detail_pixel[k] = input_image->image_pixels[row][col][k] - smooth_shm[row * width + col][k];
-                        if (detail_pixel[k] < 0) {
-                            detail_pixel[k] = 0;
-                        }
-                        detail_shm[row * width + col][k] = (uint8_t)detail_pixel[k];
-                    }
-                }
-            }
-            rowdetail++;
-            coldetail++;
-            i++;
+        /** Forking to create p3 from p2 */
+        pid_t csharppid = fork();
+        if (csharppid == -1) {
+            perror("fork");
+            exit(EXIT_FAILURE);
         }
 
-        // Fork to create sharp process (p3)
-        pid_t csharppid = fork();
-        if (csharppid == 0) {
+        if (csharppid > 0) {
+            while (i != iter - 1) {
+                for (int row = 0; row < height; row++) {
+                    for (int col = 0; col < width; col++) {
+                        int detail_pixel[3];
+                        for (int k = 0; k < 3; k++) {
+                            detail_pixel[k] = input_image->image_pixels[row][col][k] - smooth_shm[row * width + col][k];
+                            if (detail_pixel[k] < 0) {
+                                detail_pixel[k] = 0;
+                            }
+                            detail_shm[row * width + col][k] = (uint8_t)detail_pixel[k];
+                        }
+                    }
+                }
+                i++;
+            }
+
+            wait(NULL); // Wait for p3 to finish
+
+            // Unmap the shared memory after p3 has finished
+            if (munmap(detail_ptr, detail_size) == -1) {
+                perror("munmap");
+                exit(EXIT_FAILURE);
+            }
+            if (close(detail_fd) == -1) {
+                perror("close");
+                exit(EXIT_FAILURE);
+            }
+            if (shm_unlink(detail_name) == -1) {
+                perror("shm_unlink");
+                exit(EXIT_FAILURE);
+            }
+
+            exit(EXIT_SUCCESS);
+
+        } else if (csharppid == 0) {
             /** Child process - Sharpening (Process p3) */
-            int rowsharp = 0;
-            int colsharp = 0;
             while (i != iter - 1) {
                 for (int row = 0; row < height; row++) {
                     for (int col = 0; col < width; col++) {
@@ -189,8 +200,6 @@ void shared_memory(struct image_t* input_image, struct image_t* padded_image, st
                         }
                     }
                 }
-                rowsharp++;
-                colsharp++;
                 i++;
             }
 
@@ -202,17 +211,29 @@ void shared_memory(struct image_t* input_image, struct image_t* padded_image, st
                 write_ppm_file(op, output_image);
             }
 
-            munmap(detail_ptr, detail_size);
-            shm_unlink(detail_name);
+            // Unmap the shared memory after sharpening
+            if (munmap(detail_ptr, detail_size) == -1) {
+                perror("munmap");
+                exit(EXIT_FAILURE);
+            }
+            if (close(detail_fd) == -1) {
+                perror("close");
+                exit(EXIT_FAILURE);
+            }
+
             exit(EXIT_SUCCESS);
         }
 
-        wait(NULL); // Wait for p3 to finish
-        munmap(detail_ptr, detail_size);
-        shm_unlink(detail_name);
-        exit(EXIT_SUCCESS);
+        // Unmap the smooth shared memory in p2 after done
+        if (munmap(smooth_ptr, smooth_size) == -1) {
+            perror("munmap");
+            exit(EXIT_FAILURE);
+        }
+        if (close(smooth_fd) == -1) {
+            perror("close");
+            exit(EXIT_FAILURE);
+        }
     }
-    return;
 }
 
 int main(int argc, char **argv)
