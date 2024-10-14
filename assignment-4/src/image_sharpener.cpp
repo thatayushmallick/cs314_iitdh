@@ -147,38 +147,23 @@ int main(int argc, char **argv)
 		cout << "usage: ./a.out <path-to-original-image> <path-to-transformed-image>\n\n";
 		exit(0);
 	}
-	// now let's calculate time for each part.
-	const auto start_read(chrono::steady_clock::now());
 	struct image_t *input_image = read_ppm_file(argv[1]);
-	const auto end_read(chrono::steady_clock::now());
 
 	struct image_t *padded_image = return_padded_image(input_image);
 	struct image_t *smoothened_image;
 	struct image_t *details_image;
 	struct image_t *sharpened_image;
 	const auto start_p(chrono::steady_clock::now());
-	for(int i=0; i<1000; i++){
+	int i=0;
+	for(i=0; i<1000; i++){
 	smoothened_image = S1_smoothen(padded_image);
 	details_image = S2_find_details(input_image, smoothened_image);
 	sharpened_image = S3_sharpen(input_image, details_image);
 	}
 	const auto end_p(chrono::steady_clock::now());
 	const chrono::duration<double> time_read(end_p-start_p);
+	cout << "writing image to: " << argv[2] << " for " << i << " times" << endl;
 	cout << "TOTAL TIME: " << (time_read.count()) << " SEC\n";
-
-	// const auto start_write(chrono::steady_clock::now());
 	write_ppm_file(argv[2], sharpened_image);
-	// const auto end_write(chrono::steady_clock::now());
-
-	// const chrono::duration<double> time_smooth(end_smooth - start_smooth);
-	// const chrono::duration<double> time_detail(end_detail - start_detail);
-	// const chrono::duration<double> time_sharpen(end_sharpen - start_sharpen);
-	// const chrono::duration<double> time_write(end_write - start_write);
-
-	// cout << "TIME TO SMOOTH " << (time_smooth.count()) << " SEC\n";
-	// cout << "TIME TO DETAIL: " << (time_detail.count()) << " SEC\n";
-	// cout << "TIME TO SHARPEN: " << (time_sharpen.count()) << " SEC\n";
-	// cout << "TIME TO WRITE: " << (time_write.count()) << " SEC\n";
-	
 	return 0;
 }

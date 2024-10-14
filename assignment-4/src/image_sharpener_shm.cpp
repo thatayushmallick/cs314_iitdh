@@ -267,7 +267,7 @@ int main(int argc, char **argv)
 	result_image->width = input_image->width;
 	result_image->image_pixels = result_image_matrix;
 	// const auto start_smooth(chrono::steady_clock::now());
-	int iter = 1000;
+	int iter = 4;
 	const auto start_clk(chrono::steady_clock::now());
 	shared_memory(input_image,padded_image,result_image,argv[2],0,iter,start_clk);
 
