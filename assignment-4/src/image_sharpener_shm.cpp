@@ -13,6 +13,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <semaphore.h>
 
 using namespace std;
 
@@ -60,7 +61,7 @@ void shared_memory(struct image_t* input_image, struct image_t* padded_image, st
         exit(EXIT_FAILURE);
     }
 
-    size_t smooth_size = sizeof(uint8_t) * 3 * height * width;
+    size_t smooth_size = sizeof(uint8_t) * 4;
     if (ftruncate(smooth_fd, smooth_size) == -1) {
         perror("ftruncate");
         exit(EXIT_FAILURE);
@@ -71,7 +72,13 @@ void shared_memory(struct image_t* input_image, struct image_t* padded_image, st
         perror("mmap");
         exit(EXIT_FAILURE);
     }
-    uint8_t (*smooth_shm)[3] = (uint8_t (*)[3])smooth_ptr;
+
+    sem_t * smooth_sem = sem_open("/smooth_semaphore", O_CREAT, 0666, 1);
+
+    if(smooth_sem == SEM_FAILED) {
+        perror("sem_open");
+        exit(EXIT_FAILURE);
+    }
 
     /** Forking to create p2 from p1 */
     pid_t cdetailpid = fork();
@@ -82,10 +89,10 @@ void shared_memory(struct image_t* input_image, struct image_t* padded_image, st
 
     if (cdetailpid > 0) {
         /** Parent process - Smoothening (Process p1) */
-        while (i != iter - 1) {
+        while (i < iter) {
             for (int row = 0; row < height; row++) {
                 for (int col = 0; col < width; col++) {
-                    int smooth_image[3];
+                    uint8_t smooth_image[3];
                     for (int k = 0; k < 3; k++) {
                         smooth_image[k] = (padded_image->image_pixels[row][col][k] / 9 +
                                            padded_image->image_pixels[row][col + 1][k] / 9 +
@@ -99,14 +106,33 @@ void shared_memory(struct image_t* input_image, struct image_t* padded_image, st
                         if (smooth_image[k] > 255) {
                             smooth_image[k] = 255;
                         }
-                        smooth_shm[row * width + col][k] = (uint8_t)smooth_image[k];
                     }
+                    uint8_t smooth_flag = 1;
+                    cout << "p1 start\n";
+                    while (smooth_flag == 1) {
+                        sem_wait(smooth_sem);
+                        cout << "help " << i << endl;
+                        memcpy (&smooth_flag, smooth_ptr, sizeof(uint8_t));
+                        sem_post(smooth_sem);
+                        usleep(100);
+                    }
+                    sem_wait(smooth_sem);
+                    for (int k = 0; k < 3; k++) {
+                        memcpy(smooth_ptr + (k + 1) * sizeof(uint8_t), &smooth_image[k], sizeof(uint8_t));
+                    }
+                    smooth_flag = 1;
+                    memcpy(smooth_ptr, &smooth_flag, sizeof(uint8_t));
+                    sem_post(smooth_sem);
                 }
             }
             i++;
         }
 
         wait(NULL);  // Wait for p2 to finish
+
+        sem_close(smooth_sem);
+
+        sem_unlink("/smooth_semaphore");
 
         // Unmap the shared memory after p2 has finished
         if (munmap(smooth_ptr, smooth_size) == -1) {
@@ -130,7 +156,7 @@ void shared_memory(struct image_t* input_image, struct image_t* padded_image, st
             exit(EXIT_FAILURE);
         }
 
-        size_t detail_size = sizeof(uint8_t) * 3 * height * width;
+        size_t detail_size = sizeof(uint8_t) * 4;
         if (ftruncate(detail_fd, detail_size) == -1) {
             perror("ftruncate");
             exit(EXIT_FAILURE);
@@ -141,7 +167,13 @@ void shared_memory(struct image_t* input_image, struct image_t* padded_image, st
             perror("mmap");
             exit(EXIT_FAILURE);
         }
-        uint8_t (*detail_shm)[3] = (uint8_t (*)[3])detail_ptr;
+
+        sem_t * detail_sem = sem_open("/detail_semaphore", O_CREAT, 1);
+
+        if(detail_sem == SEM_FAILED) {
+            perror("sem_open");
+            exit(EXIT_FAILURE);
+        }
 
         /** Forking to create p3 from p2 */
         pid_t csharppid = fork();
@@ -151,23 +183,57 @@ void shared_memory(struct image_t* input_image, struct image_t* padded_image, st
         }
 
         if (csharppid > 0) {
-            while (i != iter - 1) {
+            while (i < iter) {
                 for (int row = 0; row < height; row++) {
                     for (int col = 0; col < width; col++) {
-                        int detail_pixel[3];
+                        uint8_t smooth_pixel[3], detail_pixel[3];
+                        uint8_t smooth_flag = 0;
+                        while (smooth_flag == 0) {
+                            sem_wait(smooth_sem);
+                            cout << "pee2" << endl;
+                            memcpy (&smooth_flag, smooth_ptr, sizeof(uint8_t));
+                            sem_post(smooth_sem);
+                            cout << "pee2s" << endl;
+                            usleep(100);
+                        }
+                        sem_wait(smooth_sem);
                         for (int k = 0; k < 3; k++) {
-                            detail_pixel[k] = input_image->image_pixels[row][col][k] - smooth_shm[row * width + col][k];
+                            memcpy(&smooth_pixel[k], smooth_ptr + (k + 1) * sizeof(uint8_t), sizeof(uint8_t));
+                        }
+                        smooth_flag = 0;
+                        memcpy(smooth_ptr, &smooth_flag, sizeof(uint8_t));
+                        sem_post(smooth_sem);
+                        for (int k = 0; k < 3; k++) {
+                            detail_pixel[k] = input_image->image_pixels[row][col][k] - smooth_pixel[k];
                             if (detail_pixel[k] < 0) {
                                 detail_pixel[k] = 0;
                             }
-                            detail_shm[row * width + col][k] = (uint8_t)detail_pixel[k];
                         }
+                        uint8_t detail_flag = 1;
+                        while (detail_flag == 1 && i > 0) {
+                            sem_wait(detail_sem);
+                            cout << "det help " << i << endl;
+                            memcpy (&detail_flag, detail_ptr, sizeof(uint8_t));
+                            sem_post(detail_sem);
+                            usleep(100);
+                        }
+                        sem_wait(detail_sem);
+                        for (int k = 0; k < 3; k++) {
+                            memcpy(detail_ptr + (k + 1) * sizeof(uint8_t), &detail_pixel[k], sizeof(uint8_t));
+                        }
+                        detail_flag = 1;
+                        memcpy(detail_ptr, &detail_flag, sizeof(uint8_t));
+                        sem_post(detail_sem);
                     }
                 }
                 i++;
             }
 
             wait(NULL); // Wait for p3 to finish
+
+            sem_close(detail_sem);
+
+            sem_unlink("/detail_semaphore");
 
             // Unmap the shared memory after p3 has finished
             if (munmap(detail_ptr, detail_size) == -1) {
@@ -187,12 +253,27 @@ void shared_memory(struct image_t* input_image, struct image_t* padded_image, st
 
         } else if (csharppid == 0) {
             /** Child process - Sharpening (Process p3) */
-            while (i != iter - 1) {
+            while (i < iter) {
                 for (int row = 0; row < height; row++) {
                     for (int col = 0; col < width; col++) {
-                        int sharp_pixel[3];
+                        uint8_t detail_pixel[3], sharp_pixel[3];
+                        uint8_t detail_flag = 0;
+                        while (detail_flag == 0) {
+                            sem_wait(detail_sem);
+                            cout << "pee3" << endl;
+                            memcpy(&detail_flag, detail_ptr, sizeof(uint8_t));
+                            sem_post(detail_sem);
+                            usleep(100);
+                        }
+                        sem_wait(detail_sem);
                         for (int k = 0; k < 3; k++) {
-                            sharp_pixel[k] = input_image->image_pixels[row][col][k] + detail_shm[row * width + col][k];
+                            memcpy(&detail_pixel[k], detail_ptr + (k + 1) * sizeof(uint8_t), sizeof(uint8_t));
+                        }
+                        detail_flag = 0;
+                        memcpy(detail_ptr, &detail_flag, sizeof(uint8_t));
+                        sem_post(detail_sem);
+                        for (int k = 0; k < 3; k++) {
+                            sharp_pixel[k] = input_image->image_pixels[row][col][k] + detail_pixel[k];
                             if (sharp_pixel[k] > 255) {
                                 sharp_pixel[k] = 255;
                             }
@@ -204,12 +285,14 @@ void shared_memory(struct image_t* input_image, struct image_t* padded_image, st
             }
 
             /** Output final result after all iterations */
-            if (i == iter - 1) {
+            if (i == iter) {
                 const auto end_clk(chrono::steady_clock::now());
                 const chrono::duration<double> time_read(end_clk - start_clk);
                 std::cout << "TOTAL TIME FOR ALL ITERATION: " << (time_read.count()) << " SEC." << std::endl;
                 write_ppm_file(op, output_image);
             }
+
+            sem_close(detail_sem);
 
             // Unmap the shared memory after sharpening
             if (munmap(detail_ptr, detail_size) == -1) {
@@ -223,6 +306,8 @@ void shared_memory(struct image_t* input_image, struct image_t* padded_image, st
 
             exit(EXIT_SUCCESS);
         }
+
+        sem_close(smooth_sem);
 
         // Unmap the smooth shared memory in p2 after done
         if (munmap(smooth_ptr, smooth_size) == -1) {
@@ -267,7 +352,7 @@ int main(int argc, char **argv)
 	result_image->width = input_image->width;
 	result_image->image_pixels = result_image_matrix;
 	// const auto start_smooth(chrono::steady_clock::now());
-	int iter = 4;
+	int iter = 2;
 	const auto start_clk(chrono::steady_clock::now());
 	shared_memory(input_image,padded_image,result_image,argv[2],0,iter,start_clk);
 
