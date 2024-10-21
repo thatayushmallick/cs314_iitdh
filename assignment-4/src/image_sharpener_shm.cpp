@@ -94,7 +94,7 @@ void shared_memory(struct image_t* input_image, struct image_t* padded_image, st
                 for (int col = 0; col < width; col++) {
                     uint8_t smooth_image[3];
                     for (int k = 0; k < 3; k++) {
-                        smooth_image[k] = (padded_image->image_pixels[row][col][k] / 9 +
+                        int val = (padded_image->image_pixels[row][col][k] / 9 +
                                            padded_image->image_pixels[row][col + 1][k] / 9 +
                                            padded_image->image_pixels[row][col + 2][k] / 9 +
                                            padded_image->image_pixels[row + 1][col][k] / 9 +
@@ -103,26 +103,24 @@ void shared_memory(struct image_t* input_image, struct image_t* padded_image, st
                                            padded_image->image_pixels[row + 2][col][k] / 9 +
                                            padded_image->image_pixels[row + 2][col + 1][k] / 9 +
                                            padded_image->image_pixels[row + 2][col + 2][k] / 9);
-                        if (smooth_image[k] > 255) {
+                        if (val > 255) {
                             smooth_image[k] = 255;
+                        }
+                        else {
+                            smooth_image[k] = val;
                         }
                     }
                     uint8_t smooth_flag = 1;
-                    cout << "p1 start\n";
                     while (smooth_flag == 1) {
                         sem_wait(smooth_sem);
-                        cout << "help " << i << endl;
                         memcpy (&smooth_flag, smooth_ptr, sizeof(uint8_t));
                         sem_post(smooth_sem);
-                        usleep(100);
                     }
-                    sem_wait(smooth_sem);
                     for (int k = 0; k < 3; k++) {
                         memcpy(smooth_ptr + (k + 1) * sizeof(uint8_t), &smooth_image[k], sizeof(uint8_t));
                     }
                     smooth_flag = 1;
                     memcpy(smooth_ptr, &smooth_flag, sizeof(uint8_t));
-                    sem_post(smooth_sem);
                 }
             }
             i++;
@@ -168,7 +166,7 @@ void shared_memory(struct image_t* input_image, struct image_t* padded_image, st
             exit(EXIT_FAILURE);
         }
 
-        sem_t * detail_sem = sem_open("/detail_semaphore", O_CREAT, 1);
+        sem_t * detail_sem = sem_open("/detail_semaphore", O_CREAT, 0666, 1);
 
         if(detail_sem == SEM_FAILED) {
             perror("sem_open");
@@ -190,40 +188,34 @@ void shared_memory(struct image_t* input_image, struct image_t* padded_image, st
                         uint8_t smooth_flag = 0;
                         while (smooth_flag == 0) {
                             sem_wait(smooth_sem);
-                            cout << "pee2" << endl;
                             memcpy (&smooth_flag, smooth_ptr, sizeof(uint8_t));
                             sem_post(smooth_sem);
-                            cout << "pee2s" << endl;
-                            usleep(100);
                         }
-                        sem_wait(smooth_sem);
                         for (int k = 0; k < 3; k++) {
                             memcpy(&smooth_pixel[k], smooth_ptr + (k + 1) * sizeof(uint8_t), sizeof(uint8_t));
                         }
                         smooth_flag = 0;
                         memcpy(smooth_ptr, &smooth_flag, sizeof(uint8_t));
-                        sem_post(smooth_sem);
                         for (int k = 0; k < 3; k++) {
-                            detail_pixel[k] = input_image->image_pixels[row][col][k] - smooth_pixel[k];
-                            if (detail_pixel[k] < 0) {
+                            int val = input_image->image_pixels[row][col][k] - smooth_pixel[k];
+                            if (val < 0) {
                                 detail_pixel[k] = 0;
+                            }
+                            else {
+                                detail_pixel[k] = val;
                             }
                         }
                         uint8_t detail_flag = 1;
-                        while (detail_flag == 1 && i > 0) {
+                        while (detail_flag == 1) {
                             sem_wait(detail_sem);
-                            cout << "det help " << i << endl;
                             memcpy (&detail_flag, detail_ptr, sizeof(uint8_t));
                             sem_post(detail_sem);
-                            usleep(100);
                         }
-                        sem_wait(detail_sem);
                         for (int k = 0; k < 3; k++) {
                             memcpy(detail_ptr + (k + 1) * sizeof(uint8_t), &detail_pixel[k], sizeof(uint8_t));
                         }
                         detail_flag = 1;
                         memcpy(detail_ptr, &detail_flag, sizeof(uint8_t));
-                        sem_post(detail_sem);
                     }
                 }
                 i++;
@@ -260,22 +252,21 @@ void shared_memory(struct image_t* input_image, struct image_t* padded_image, st
                         uint8_t detail_flag = 0;
                         while (detail_flag == 0) {
                             sem_wait(detail_sem);
-                            cout << "pee3" << endl;
                             memcpy(&detail_flag, detail_ptr, sizeof(uint8_t));
                             sem_post(detail_sem);
-                            usleep(100);
                         }
-                        sem_wait(detail_sem);
                         for (int k = 0; k < 3; k++) {
                             memcpy(&detail_pixel[k], detail_ptr + (k + 1) * sizeof(uint8_t), sizeof(uint8_t));
                         }
                         detail_flag = 0;
                         memcpy(detail_ptr, &detail_flag, sizeof(uint8_t));
-                        sem_post(detail_sem);
                         for (int k = 0; k < 3; k++) {
-                            sharp_pixel[k] = input_image->image_pixels[row][col][k] + detail_pixel[k];
-                            if (sharp_pixel[k] > 255) {
+                            int val = input_image->image_pixels[row][col][k] + detail_pixel[k];
+                            if (val > 255) {
                                 sharp_pixel[k] = 255;
+                            }
+                            else {
+                                sharp_pixel[k] = val;
                             }
                             output_image->image_pixels[row][col][k] = sharp_pixel[k];
                         }
@@ -352,7 +343,7 @@ int main(int argc, char **argv)
 	result_image->width = input_image->width;
 	result_image->image_pixels = result_image_matrix;
 	// const auto start_smooth(chrono::steady_clock::now());
-	int iter = 2;
+	int iter = 1000;
 	const auto start_clk(chrono::steady_clock::now());
 	shared_memory(input_image,padded_image,result_image,argv[2],0,iter,start_clk);
 
